@@ -140,6 +140,57 @@ fun HomeScreen(viewModel: MainViewModel) {
             }
         }
 
+        // System DSP Global Processing Banner Card (Spotify, YouTube, Games)
+        val isSystemDspOn by viewModel.isSystemDspActive.collectAsState()
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(if (isSystemDspOn) MaroonPrimary.copy(alpha = 0.25f) else StudioCardBg, RoundedCornerShape(8.dp))
+                .border(1.dp, if (isSystemDspOn) MaroonPrimaryLight else StudioBorder, RoundedCornerShape(8.dp))
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .width(8.dp)
+                            .height(8.dp)
+                            .background(if (isSystemDspOn) MeterGreen else Color.DarkGray, RoundedCornerShape(4.dp))
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isSystemDspOn) "SYSTEM DSP ACTIVE" else "SYSTEM DSP STANDBY",
+                        color = if (isSystemDspOn) MeterGreen else StudioSilverMuted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Text(
+                    text = "Processes background audio from Spotify, YouTube, Games & Music Players.",
+                    color = StudioSilverMuted,
+                    fontSize = 9.sp
+                )
+            }
+
+            Button(
+                onClick = { viewModel.toggleSystemDsp() },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isSystemDspOn) MaroonPrimary else StudioCardBgElevated
+                ),
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier.height(34.dp).testTag("toggle_system_dsp_btn")
+            ) {
+                Text(
+                    text = if (isSystemDspOn) "ACTIVE" else "ENABLE",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
         // Real-Time Audio Meters (IN and OUT)
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -195,10 +246,10 @@ fun HomeScreen(viewModel: MainViewModel) {
                     modifier = Modifier.testTag("source_test_tone")
                 )
                 SourceButton(
-                    title = "MIC INPUT",
-                    isSelected = viewModel.engine.sourceType == AudioSourceType.MICROPHONE,
-                    onClick = { viewModel.setAudioSource(AudioSourceType.MICROPHONE) },
-                    modifier = Modifier.testTag("source_mic")
+                    title = "INTERNAL PLAYER",
+                    isSelected = viewModel.engine.sourceType == AudioSourceType.AUDIO_FILE,
+                    onClick = { viewModel.setAudioSource(AudioSourceType.AUDIO_FILE) },
+                    modifier = Modifier.testTag("source_internal_player")
                 )
             }
         }
@@ -270,6 +321,26 @@ fun HomeScreen(viewModel: MainViewModel) {
                     icon = Icons.Default.Equalizer,
                     onClick = { viewModel.setTab("CROSSOVER") },
                     modifier = Modifier.weight(1f).testTag("nav_crossover")
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                QuickNavCard(
+                    title = "SOUND SYSTEM MEWAH",
+                    subtitle = "Kamar, IEM, TWS, PA & Hi-Fi",
+                    icon = Icons.Default.Speaker,
+                    onClick = { viewModel.setTab("SYSTEMS") },
+                    modifier = Modifier.weight(1f).testTag("nav_systems")
+                )
+                QuickNavCard(
+                    title = "CAPABILITIES",
+                    subtitle = "Android Hardware Matrix",
+                    icon = Icons.Default.Settings,
+                    onClick = { viewModel.setTab("CAPABILITIES") },
+                    modifier = Modifier.weight(1f).testTag("nav_capabilities")
                 )
             }
         }

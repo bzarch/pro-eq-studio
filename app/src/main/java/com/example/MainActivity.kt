@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speaker
@@ -81,21 +82,9 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
 
-    private val requestRecordPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted: Boolean ->
-        if (isGranted) {
-            viewModel.engine.updateConnectedDeviceInfo()
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            requestRecordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        }
 
         setContent {
             ProEqStudioTheme {
@@ -188,14 +177,20 @@ fun StudioAppScaffold(viewModel: MainViewModel) {
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 StudioNavTab("HOME", "HOME", Icons.Default.Home, activeTab) { viewModel.setTab("HOME") }
+                StudioNavTab("SYSTEMS", "SYSTEMS", Icons.Default.Speaker, activeTab) { viewModel.setTab("SYSTEMS") }
+                StudioNavTab("SOURCE", "INPUT", Icons.Default.GraphicEq, activeTab) { viewModel.setTab("SOURCE") }
+                StudioNavTab("OUTPUT", "ROUTER", Icons.Default.Speaker, activeTab) { viewModel.setTab("OUTPUT") }
+                StudioNavTab("RACK", "RACK", Icons.Default.Tune, activeTab) { viewModel.setTab("RACK") }
                 StudioNavTab("EQ", "EQ", Icons.Default.GraphicEq, activeTab) { viewModel.setTab("EQ") }
                 StudioNavTab("PARAMETRIC", "PEQ", Icons.Default.Equalizer, activeTab) { viewModel.setTab("PARAMETRIC") }
+                StudioNavTab("SPEAKER", "SPK/CAR", Icons.Default.Speaker, activeTab) { viewModel.setTab("SPEAKER") }
                 StudioNavTab("MONO_STEREO", "M/S", Icons.Default.Headphones, activeTab) { viewModel.setTab("MONO_STEREO") }
                 StudioNavTab("TONE", "TONE", Icons.Default.Tune, activeTab) { viewModel.setTab("TONE") }
                 StudioNavTab("DYNAMICS", "DYN", Icons.Default.Speaker, activeTab) { viewModel.setTab("DYNAMICS") }
                 StudioNavTab("CROSSOVER", "XOVER", Icons.Default.Equalizer, activeTab) { viewModel.setTab("CROSSOVER") }
                 StudioNavTab("ANALYZER", "FFT", Icons.Default.Speed, activeTab) { viewModel.setTab("ANALYZER") }
                 StudioNavTab("PRESETS", "PRESET", Icons.Default.List, activeTab) { viewModel.setTab("PRESETS") }
+                StudioNavTab("CAPABILITIES", "DEVICE", Icons.Default.Settings, activeTab) { viewModel.setTab("CAPABILITIES") }
                 StudioNavTab("SETTINGS", "SETUP", Icons.Default.Settings, activeTab) { viewModel.setTab("SETTINGS") }
             }
         }
@@ -207,14 +202,20 @@ fun StudioAppScaffold(viewModel: MainViewModel) {
         ) {
             when (activeTab) {
                 "HOME" -> HomeScreen(viewModel = viewModel)
+                "SYSTEMS" -> com.example.ui.screens.UniversalSoundSystemsScreen(viewModel = viewModel)
+                "SOURCE" -> com.example.ui.screens.SourceManagerScreen(viewModel = viewModel)
+                "OUTPUT" -> com.example.ui.screens.OutputManagerScreen(viewModel = viewModel)
+                "RACK" -> com.example.ui.screens.DspRackScreen(viewModel = viewModel)
                 "EQ" -> GraphicEqScreen(viewModel = viewModel)
                 "PARAMETRIC" -> ParametricEqScreen(viewModel = viewModel)
+                "SPEAKER" -> com.example.ui.screens.SpeakerProcessorScreen(viewModel = viewModel)
                 "MONO_STEREO" -> MonoStereoScreen(viewModel = viewModel)
                 "TONE" -> QuickToneScreen(viewModel = viewModel)
                 "DYNAMICS" -> DynamicsScreen(viewModel = viewModel)
                 "CROSSOVER" -> CrossoverScreen(viewModel = viewModel)
                 "ANALYZER" -> AnalyzerScreen(viewModel = viewModel)
                 "PRESETS" -> PresetsScreen(viewModel = viewModel)
+                "CAPABILITIES" -> com.example.ui.screens.AudioCapabilitiesScreen(viewModel = viewModel)
                 "SETTINGS" -> SettingsScreen(viewModel = viewModel)
                 else -> HomeScreen(viewModel = viewModel)
             }

@@ -3,6 +3,7 @@ package com.example.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.audio.AudioCapabilityDetector
 import com.example.audio.AudioEngine
 import com.example.audio.AudioSourceType
 import com.example.audio.LatencyProfile
@@ -13,8 +14,12 @@ import com.example.dsp.CrossoverSlope
 import com.example.dsp.FilterType
 import com.example.dsp.GraphicEqBandCount
 import com.example.dsp.RoutingMode
+import com.example.model.DeviceAudioProfile
+import com.example.model.DspModuleInfo
+import com.example.model.ModuleType
 import com.example.model.PeqBandModel
 import com.example.model.StudioPreset
+import com.example.service.DspBackgroundService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,6 +29,73 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val engine = AudioEngine(application.applicationContext)
     val storage = PresetStorage(application.applicationContext)
+
+    // Capability Telemetry
+    val deviceProfile: DeviceAudioProfile = AudioCapabilityDetector.detect(application.applicationContext)
+
+    // System DSP State
+    private val _isSystemDspActive = MutableStateFlow(false)
+    val isSystemDspActive: StateFlow<Boolean> = _isSystemDspActive.asStateFlow()
+
+    // FX Rack Modules List
+    private val _rackModules = MutableStateFlow(
+        listOf(
+            DspModuleInfo("mod_preamp", ModuleType.PREAMP, "01 PREAMP / INPUT GAIN", isEnabled = true),
+            DspModuleInfo("mod_gate", ModuleType.NOISE_GATE, "02 NOISE GATE & DE-ESSER", isEnabled = false),
+            DspModuleInfo("mod_bass", ModuleType.BASS_PROCESSOR, "03 HARMONIC BASS ENHANCER", isEnabled = false),
+            DspModuleInfo("mod_geq", ModuleType.GRAPHIC_EQ, "04 ISO GRAPHIC EQUALIZER", isEnabled = true),
+            DspModuleInfo("mod_peq", ModuleType.PARAMETRIC_EQ, "05 10-BAND PARAMETRIC EQ", isEnabled = true),
+            DspModuleInfo("mod_tone", ModuleType.MID_PROCESSOR, "06 QUICK TONE CONSOLE", isEnabled = true),
+            DspModuleInfo("mod_mod", ModuleType.CHORUS, "07 CHORUS & TREMOLO MODULATION", isEnabled = false),
+            DspModuleInfo("mod_delay", ModuleType.DELAY, "08 STEREO PING-PONG DELAY", isEnabled = false),
+            DspModuleInfo("mod_reverb", ModuleType.REVERB, "09 ALGORITHMIC STUDIO REVERB", isEnabled = false),
+            DspModuleInfo("mod_stereo", ModuleType.STEREO_WIDENER, "10 M/S STEREO & MONO SUMMING", isEnabled = true),
+            DspModuleInfo("mod_comp", ModuleType.COMPRESSOR, "11 DYNAMIC RANGE COMPRESSOR", isEnabled = false),
+            DspModuleInfo("mod_xover", ModuleType.CROSSOVER, "12 48dB/OCT MULTI-WAY CROSSOVER", isEnabled = false),
+            DspModuleInfo("mod_limiter", ModuleType.LIMITER, "13 BRICKWALL PEAK LIMITER", isEnabled = true)
+        )
+    )
+    val rackModules: StateFlow<List<DspModuleInfo>> = _rackModules.asStateFlow()
+
+    // Source Channel Strips (Real Detection & Controls)
+    private val _sourceStrips = MutableStateFlow(
+        listOf(
+            com.example.model.SourceChannelStrip(com.example.model.InputSourceType.SYSTEM_AUDIO, isEnabled = true, statusReason = "Android Global Audio Effect Session"),
+            com.example.model.SourceChannelStrip(com.example.model.InputSourceType.INTERNAL_PLAYER, isEnabled = true, statusReason = "Audio File Storage / Playlist"),
+            com.example.model.SourceChannelStrip(com.example.model.InputSourceType.TEST_SIGNAL_GEN, isEnabled = true, statusReason = "Sine, Sweep & Noise Synth"),
+            com.example.model.SourceChannelStrip(com.example.model.InputSourceType.BLUETOOTH_IN, isEnabled = false, status = com.example.model.CapabilityStatus.LIMITED, statusReason = "A2DP Sink Requires Device Pairing"),
+            com.example.model.SourceChannelStrip(com.example.model.InputSourceType.USB_AUDIO_IN, isEnabled = false, status = com.example.model.CapabilityStatus.LIMITED, statusReason = "USB Host Mode / Interface Detection"),
+            com.example.model.SourceChannelStrip(com.example.model.InputSourceType.AUX_LINE_IN, isEnabled = false, status = com.example.model.CapabilityStatus.UNAVAILABLE, statusReason = "Line-in hardware jack not present on mobile")
+        )
+    )
+    val sourceStrips: StateFlow<List<com.example.model.SourceChannelStrip>> = _sourceStrips.asStateFlow()
+
+    // Active Selected Source
+    private val _selectedSource = MutableStateFlow(com.example.model.InputSourceType.SYSTEM_AUDIO)
+    val selectedSource: StateFlow<com.example.model.InputSourceType> = _selectedSource.asStateFlow()
+
+    // Output Route Destination States
+    private val _outputRoutes = MutableStateFlow(
+        listOf(
+            com.example.model.OutputRouteState(com.example.model.OutputDestinationType.INTERNAL_SPEAKER, isConnected = true, profilePreset = "Phone Speaker Tuned"),
+            com.example.model.OutputRouteState(com.example.model.OutputDestinationType.WIRED_HEADSET, isConnected = false, profilePreset = "Harman In-Ear Reference"),
+            com.example.model.OutputRouteState(com.example.model.OutputDestinationType.BLUETOOTH_A2DP, isConnected = false, profilePreset = "Bluetooth Balanced"),
+            com.example.model.OutputRouteState(com.example.model.OutputDestinationType.USB_DAC_INTERFACE, isConnected = false, profilePreset = "Bit-Perfect Studio Master"),
+            com.example.model.OutputRouteState(com.example.model.OutputDestinationType.CAR_AUDIO_PROFILE, isConnected = false, profilePreset = "Car Sub & Time Alignment")
+        )
+    )
+    val outputRoutes: StateFlow<List<com.example.model.OutputRouteState>> = _outputRoutes.asStateFlow()
+
+    private val _selectedOutput = MutableStateFlow(com.example.model.OutputDestinationType.INTERNAL_SPEAKER)
+    val selectedOutput: StateFlow<com.example.model.OutputDestinationType> = _selectedOutput.asStateFlow()
+
+    // Car Audio Alignment State
+    private val _carAlignment = MutableStateFlow(com.example.model.CarAudioTimeAlignment())
+    val carAlignment: StateFlow<com.example.model.CarAudioTimeAlignment> = _carAlignment.asStateFlow()
+
+    // Headphone Profile State
+    private val _headphoneProfile = MutableStateFlow(com.example.model.HeadphoneDspProfile())
+    val headphoneProfile: StateFlow<com.example.model.HeadphoneDspProfile> = _headphoneProfile.asStateFlow()
 
     // Current Active Preset
     private val _currentPreset = MutableStateFlow(storage.getAllPresets().first())
@@ -79,6 +151,119 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             engine.start()
             _isPowerOn.value = true
         }
+    }
+
+    fun toggleSystemDsp() {
+        if (_isSystemDspActive.value) {
+            engine.systemAudioBridge.disableSystemDsp()
+            DspBackgroundService.stopService(getApplication())
+            _isSystemDspActive.value = false
+        } else {
+            val ok = engine.systemAudioBridge.enableSystemDsp()
+            if (ok) {
+                DspBackgroundService.startService(getApplication())
+                _isSystemDspActive.value = true
+            }
+        }
+    }
+
+    fun toggleRackModule(id: String) {
+        val currentList = _rackModules.value.map {
+            if (it.id == id) {
+                val newState = !it.isEnabled
+                when (it.type) {
+                    ModuleType.DELAY -> engine.delayProcessor.isEnabled = newState
+                    ModuleType.REVERB -> engine.reverbProcessor.isEnabled = newState
+                    ModuleType.CHORUS -> engine.modulationProcessor.isEnabled = newState
+                    ModuleType.BASS_PROCESSOR -> engine.bassEnhancer.isEnabled = newState
+                    ModuleType.NOISE_GATE -> engine.dynamicsEffects.gateEnabled = newState
+                    ModuleType.COMPRESSOR -> engine.compressor.isEnabled = newState
+                    ModuleType.LIMITER -> engine.limiter.isEnabled = newState
+                    ModuleType.GRAPHIC_EQ -> engine.graphicEq.isBypassed = !newState
+                    ModuleType.PARAMETRIC_EQ -> engine.parametricEq.isBypassed = !newState
+                    else -> {}
+                }
+                it.copy(isEnabled = newState)
+            } else it
+        }
+        _rackModules.value = currentList
+    }
+
+    fun selectSource(sourceType: com.example.model.InputSourceType) {
+        _selectedSource.value = sourceType
+        when (sourceType) {
+            com.example.model.InputSourceType.TEST_SIGNAL_GEN -> setAudioSource(AudioSourceType.TEST_TONE)
+            com.example.model.InputSourceType.INTERNAL_PLAYER -> setAudioSource(AudioSourceType.AUDIO_FILE)
+            else -> setAudioSource(AudioSourceType.TEST_TONE)
+        }
+    }
+
+    fun selectOutput(dest: com.example.model.OutputDestinationType) {
+        _selectedOutput.value = dest
+        val updated = _outputRoutes.value.map {
+            it.copy(isConnected = it.destinationType == dest)
+        }
+        _outputRoutes.value = updated
+    }
+
+    // Universal Sound Profile active state
+    private val _activeUniversalProfile = MutableStateFlow(com.example.presets.UniversalSoundProfiles.profiles[4]) // default Sound Sistem Mewah
+    val activeUniversalProfile: StateFlow<com.example.model.AudioProfileDetail> = _activeUniversalProfile.asStateFlow()
+
+    fun applyUniversalSoundProfile(profile: com.example.model.AudioProfileDetail) {
+        _activeUniversalProfile.value = profile
+
+        // 1. Bass Enhancer & Sub Harmonics
+        engine.bassEnhancer.isEnabled = profile.bassBoostDb > 0f || profile.subHarmonics > 0f
+        engine.bassEnhancer.punchDb = profile.bassBoostDb
+        engine.bassEnhancer.subHarmonicsAmount = profile.subHarmonics
+        engine.bassEnhancer.updateSampleRate(engine.targetSampleRate)
+
+        // 2. Quick Tone (Mid clarity and Treble/Air)
+        engine.quickTone.midDb = profile.midClarityDb
+        engine.quickTone.airDb = profile.airPresenceDb
+        engine.quickTone.bassDb = profile.bassBoostDb * 0.7f
+        engine.quickTone.update(engine.targetSampleRate)
+
+        // 3. Binaural Crossfeed (for Headset / IEMs)
+        engine.headphoneCrossfeed.isEnabled = profile.crossfeedEnabled
+        engine.headphoneCrossfeed.amount = profile.crossfeedAmount
+        _headphoneProfile.value = _headphoneProfile.value.copy(
+            isCrossfeedEnabled = profile.crossfeedEnabled,
+            crossfeedAmount = profile.crossfeedAmount
+        )
+
+        // 4. Stereo Width Spatial Immersion
+        engine.stereoProcessor.stereoWidth = profile.stereoWidthPct / 100.0f
+
+        // 5. Crossover Highpass Protection
+        engine.crossover.lowFreq = profile.crossoverHpfHz
+        engine.crossover.update(engine.targetSampleRate)
+
+        // 6. Brickwall Peak Limiter Ceiling
+        engine.limiter.ceilingDb = profile.limiterCeilingDb
+    }
+
+    fun updateDynamicEq(enabled: Boolean, freq: Float, q: Float, threshDb: Float, ratio: Float, isCut: Boolean) {
+        engine.dynamicEq.isEnabled = enabled
+        engine.dynamicEq.frequency = freq
+        engine.dynamicEq.q = q
+        engine.dynamicEq.thresholdDb = threshDb
+        engine.dynamicEq.ratio = ratio
+        engine.dynamicEq.isDynamicCut = isCut
+        engine.dynamicEq.updateCoefficients(engine.targetSampleRate)
+    }
+
+    fun updateCrossfeed(enabled: Boolean, amount: Float) {
+        engine.headphoneCrossfeed.isEnabled = enabled
+        engine.headphoneCrossfeed.amount = amount
+        _headphoneProfile.value = _headphoneProfile.value.copy(isCrossfeedEnabled = enabled, crossfeedAmount = amount)
+    }
+
+    fun updateTimeAlignment(leftMs: Float, rightMs: Float) {
+        engine.timeAlignmentLeft.delayMs = leftMs
+        engine.timeAlignmentRight.delayMs = rightMs
+        _carAlignment.value = _carAlignment.value.copy(frontLeftDelayMs = leftMs, frontRightDelayMs = rightMs)
     }
 
     fun toggleBypass() {

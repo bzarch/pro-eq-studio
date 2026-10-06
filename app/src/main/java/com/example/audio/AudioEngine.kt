@@ -29,7 +29,6 @@ import kotlin.math.pow
 
 enum class AudioSourceType {
     TEST_TONE,
-    MICROPHONE,
     AUDIO_FILE
 }
 
@@ -63,6 +62,24 @@ class AudioEngine(private val context: Context) {
     val compressor = com.example.dsp.Compressor()
     val limiter = Limiter()
     val softClipper = SoftClipper()
+
+    // Multi-Effect Rack Modules
+    val delayProcessor = com.example.dsp.DelayProcessor(maxDelaySeconds = 2.0f, sampleRate = 48000)
+    val reverbProcessor = com.example.dsp.ReverbProcessor()
+    val modulationProcessor = com.example.dsp.ModulationProcessor()
+    val bassEnhancer = com.example.dsp.BassEnhancer()
+    val dynamicsEffects = com.example.dsp.DynamicsEffects()
+    val dynamicEq = com.example.dsp.DynamicBiquadEq()
+    val headphoneCrossfeed = com.example.dsp.HeadphoneCrossfeedProcessor()
+    val timeAlignmentLeft = com.example.dsp.TimeAlignmentDelay(48000)
+    val timeAlignmentRight = com.example.dsp.TimeAlignmentDelay(48000)
+
+    // Routing & Source Channel Strips
+    val activeSourceType = com.example.model.InputSourceType.SYSTEM_AUDIO
+    var activeOutputRoute = com.example.model.OutputDestinationType.INTERNAL_SPEAKER
+
+    // System-wide Global Audio Effect Bridge
+    val systemAudioBridge = SystemAudioBridge(context)
 
     // Test tone generator
     val testTone = TestToneGenerator()
@@ -161,6 +178,10 @@ class AudioEngine(private val context: Context) {
         quickTone.update(targetSampleRate)
         stereoProcessor.updateSampleRate(targetSampleRate)
         crossover.update(targetSampleRate)
+        bassEnhancer.updateSampleRate(targetSampleRate)
+        dynamicsEffects.updateSampleRate(targetSampleRate)
+        dynamicEq.updateCoefficients(targetSampleRate)
+        headphoneCrossfeed.updateSampleRate(targetSampleRate)
     }
 
     fun start() {
@@ -226,32 +247,6 @@ class AudioEngine(private val context: Context) {
         val audioBuffer = FloatArray(bufferFrames * channelCount)
         val recordShortBuffer = ShortArray(bufferFrames * channelCount)
 
-        // Mic recorder initialization if needed
-        if (sourceType == AudioSourceType.MICROPHONE) {
-            try {
-                val recordBufSize = max(
-                    AudioRecord.getMinBufferSize(
-                        sampleRate,
-                        AudioFormat.CHANNEL_IN_STEREO,
-                        AudioFormat.ENCODING_PCM_16BIT
-                    ),
-                    bufferFrames * channelCount * 2 * 4
-                )
-                audioRecord = AudioRecord(
-                    MediaRecorder.AudioSource.MIC,
-                    sampleRate,
-                    AudioFormat.CHANNEL_IN_STEREO,
-                    AudioFormat.ENCODING_PCM_16BIT,
-                    recordBufSize
-                )
-                if (audioRecord?.state == AudioRecord.STATE_INITIALIZED) {
-                    audioRecord?.startRecording()
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-
         val estimatedLatency = (bufferFrames.toFloat() / sampleRate.toFloat()) * 1000f
         _actualLatencyMs.value = estimatedLatency
 
@@ -263,28 +258,9 @@ class AudioEngine(private val context: Context) {
         while (isEngineRunning.get()) {
             loopStartTime = System.nanoTime()
 
-            // 1. INPUT GENERATION / CAPTURE
+            // 1. INPUT GENERATION / PLAYBACK
             when (sourceType) {
-                AudioSourceType.TEST_TONE -> {
-                    testTone.fillBuffer(audioBuffer, 0, bufferFrames, sampleRate)
-                }
-                AudioSourceType.MICROPHONE -> {
-                    val rec = audioRecord
-                    if (rec != null && rec.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
-                        val readShorts = rec.read(recordShortBuffer, 0, audioBuffer.size)
-                        if (readShorts > 0) {
-                            for (i in 0 until readShorts) {
-                                audioBuffer[i] = recordShortBuffer[i] / 32768.0f
-                            }
-                        } else {
-                            audioBuffer.fill(0f)
-                        }
-                    } else {
-                        audioBuffer.fill(0f)
-                    }
-                }
-                AudioSourceType.AUDIO_FILE -> {
-                    // Audio file streaming / fallback
+                AudioSourceType.TEST_TONE, AudioSourceType.AUDIO_FILE -> {
                     testTone.fillBuffer(audioBuffer, 0, bufferFrames, sampleRate)
                 }
             }
@@ -315,6 +291,16 @@ class AudioEngine(private val context: Context) {
                     l = routed.first
                     r = routed.second
 
+                    // Noise Gate & De-Esser
+                    val dyn = dynamicsEffects.process(l, r)
+                    l = dyn.first
+                    r = dyn.second
+
+                    // Bass Enhancer & Sub Harmonics
+                    val bEnh = bassEnhancer.process(l, r)
+                    l = bEnh.first
+                    r = bEnh.second
+
                     // Graphic EQ (10 / 15 / 31 bands)
                     val gEq = graphicEq.process(l, r)
                     l = gEq.first
@@ -325,10 +311,39 @@ class AudioEngine(private val context: Context) {
                     l = pEq.first
                     r = pEq.second
 
+                    // Dynamic EQ (selective energy threshold boost/cut)
+                    val dynEq = dynamicEq.process(l, r, sampleRate)
+                    l = dynEq.first
+                    r = dynEq.second
+
                     // Quick Tone (Bass / Mid / Treble / Presence / Air)
                     val qTone = quickTone.process(l, r)
                     l = qTone.first
                     r = qTone.second
+
+                    // Headphone Crossfeed (Binaural fatigue eliminator)
+                    val xfeed = headphoneCrossfeed.process(l, r)
+                    l = xfeed.first
+                    r = xfeed.second
+
+                    // Time Alignment Delay (Left / Right acoustic alignment)
+                    l = timeAlignmentLeft.process(l, sampleRate)
+                    r = timeAlignmentRight.process(r, sampleRate)
+
+                    // Modulation (Chorus / Tremolo)
+                    val mod = modulationProcessor.process(l, r, sampleRate)
+                    l = mod.first
+                    r = mod.second
+
+                    // Delay & Echo
+                    val del = delayProcessor.process(l, r, sampleRate)
+                    l = del.first
+                    r = del.second
+
+                    // Algorithmic Studio Reverb
+                    val rev = reverbProcessor.process(l, r)
+                    l = rev.first
+                    r = rev.second
 
                     // Crossover Multi-band
                     val xOver = crossover.process(l, r)

@@ -1,6 +1,6 @@
 {
-  "name": "PRO EQ STUDIO",
-  "description": "Professional Real-Time Audio DSP Equalizer and Mastering Studio for Android",
+  "name": "DSP MASTER PRO",
+  "description": "Professional Android Digital Signal Processor, Equalizer, Audio Effects, Mixer, Speaker Processor, Headphone Processor, Input/Output Router",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
